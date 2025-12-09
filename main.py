@@ -1,220 +1,316 @@
-# main.py (добавляем отладочную информацию)
+# main.py
 import numpy as np
 import pygame
 import sys
-from model_loader import load_obj
+from model_loader import create_cube, create_diamond, create_pyramid
 from renderer import Renderer
 from camera import Camera
 from transformations import *
+from point import Point
+
+class SceneObject:
+    def __init__(self, model, position=None, rotation=None, scale=None, name="Объект"):
+        self.model = model
+        self.position = position or Point(0, 0, 0)
+        self.rotation = rotation or Point(0, 0, 0)
+        self.scale = scale or Point(1, 1, 1)
+        self.name = name
+    
+    def get_transformed_model(self):
+        """Получение преобразованной копии модели"""
+        # Создаем матрицу преобразования
+        scale_mat = scaling_matrix(self.scale.x, self.scale.y, self.scale.z)
+        rot_x = rotation_x_matrix(self.rotation.x)
+        rot_y = rotation_y_matrix(self.rotation.y)
+        rot_z = rotation_z_matrix(self.rotation.z)
+        trans_mat = translation_matrix(self.position.x, self.position.y, self.position.z)
+        
+        # Комбинируем: масштаб -> вращение -> перенос
+        rotation_mat = composite_transformation(rot_z, rot_y, rot_x)
+        transform_mat = composite_transformation(trans_mat, rotation_mat, scale_mat)
+        
+        return self.model.get_transformed_copy(transform_mat)
+
+def create_scene_with_three_objects():
+    """Создание сцены с тремя объектами"""
+    print("\n" + "="*50)
+    print("СЦЕНА С ТРЕМЯ ОБЪЕКТАМИ")
+    print("="*50)
+    print("1. Куб (выпуклый) - красный")
+    print("2. Ромб/октаэдр (выпуклый) - зеленый")
+    print("3. Пирамида (невыпуклая) - синяя")
+    print("="*50 + "\n")
+    
+    # Три объекта с разным положением и вращением
+    objects = [
+        SceneObject(create_cube(), Point(-3, 0, 0), Point(30, 45, 0), Point(1, 1, 1), "Куб"),
+        SceneObject(create_diamond(), Point(3, 0, 2), Point(0, 0, 0), Point(1.2, 1.2, 1.2), "Ромб"),
+        SceneObject(create_pyramid(), Point(0, -2, 1), Point(0, 30, 0), Point(1, 1, 1), "Пирамида"),
+    ]
+    
+    return objects
+
+def display_info(screen, show_wireframe, show_filled, backface_culling, 
+                 projection_type, width, height, fps):
+    """Отображение информации на экране"""
+    font = pygame.font.Font(None, 28)
+    small_font = pygame.font.Font(None, 22)
+    
+    # Левая панель - управление
+    left_info = [
+        "=== УПРАВЛЕНИЕ ===",
+        "W: Каркас вкл/выкл",
+        "F: Заливка вкл/выкл (Z-буфер)",
+        "C: Отсечение граней вкл/выкл",
+        "O: Ортографическая проекция",
+        "I: Перспективная проекция",
+        "T: Тест перекрытия объектов",
+        "R: Сброс сцены",
+        "",
+        "=== ВРАЩЕНИЕ ОБЪЕКТОВ ===",
+        "Куб (красный):",
+        "  Q - вращение по оси Y-",
+        "  E - вращение по оси Y+",
+        "",
+        "Ромб (зеленый):",
+        "  A - вращение по оси X-",
+        "  D - вращение по оси X+",
+        "",
+        "Пирамида (синяя):",
+        "  Z - вращение по оси Z-",
+        "  X - вращение по оси Z+",
+        "",
+        "ESC: Выход",
+    ]
+    
+    # Правая панель - статус
+    right_info = [
+        "=== СТАТУС ===",
+        f"FPS: {fps}",
+        f"Каркас: {'ВКЛ' if show_wireframe else 'ВЫКЛ'}",
+        f"Заливка: {'ВКЛ' if show_filled else 'ВЫКЛ'}",
+        f"Отсечение: {'ВКЛ' if backface_culling else 'ВЫКЛ'}",
+        f"Проекция: {'ОРТОГРАФИЧЕСКАЯ' if projection_type == 'orthographic' else 'ПЕРСПЕКТИВНАЯ'}",
+        "",
+        "=== МОДЕЛИ ===",
+        "• Куб: выпуклый, красный",
+        "• Ромб: выпуклый, зеленый",
+        "• Пирамида: невыпуклая, синяя",
+        "",
+        "=== Z-БУФЕР ===",
+        "Работа алгоритма:",
+        "• Включите заливку (F)",
+        "• Включите отсечение (C)",
+        "• Используйте тест (T)",
+        "• Наблюдайте перекрытие",
+    ]
+    
+    # Отображение левой панели
+    y_pos = 10
+    for i, text in enumerate(left_info):
+        color = (220, 220, 220)
+        if text.startswith("==="):
+            color = (255, 200, 100)
+            y_pos += 5
+        elif "Z-буфер" in text:
+            color = (100, 255, 200)
+        elif "ВКЛ" in text:
+            color = (100, 255, 100)
+        elif "ВЫКЛ" in text:
+            color = (255, 100, 100)
+        elif "красный" in text:
+            color = (255, 100, 100)
+        elif "зеленый" in text:
+            color = (100, 255, 100)
+        elif "синяя" in text:
+            color = (100, 100, 255)
+        
+        # Выбираем шрифт в зависимости от типа текста
+        if text.startswith("===") or "ВКЛ" in text or "ВЫКЛ" in text:
+            text_surface = font.render(text, True, color)
+            screen.blit(text_surface, (10, y_pos))
+            y_pos += 30
+        else:
+            text_surface = small_font.render(text, True, color)
+            screen.blit(text_surface, (10, y_pos))
+            y_pos += 24
+    
+    # Отображение правой панели
+    y_pos = 10
+    for i, text in enumerate(right_info):
+        color = (200, 230, 255)
+        if text.startswith("==="):
+            color = (255, 220, 100)
+            y_pos += 5
+        elif "✓" in text:
+            color = (100, 255, 100)
+        elif "ВКЛ" in text:
+            color = (100, 255, 100)
+        elif "ВЫКЛ" in text:
+            color = (255, 100, 100)
+        elif "красный" in text:
+            color = (255, 100, 100)
+        elif "зеленый" in text:
+            color = (100, 255, 100)
+        elif "синяя" in text:
+            color = (100, 100, 255)
+        
+        text_surface = small_font.render(text, True, color)
+        screen.blit(text_surface, (width - 350, y_pos))
+        y_pos += 24
 
 def main():
     # Инициализация Pygame
     pygame.init()
-    WIDTH, HEIGHT = 800, 600
+    
+    # Настройки окна
+    WIDTH, HEIGHT = 1200, 800
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Миша мишенька медведь научи меня пердеть")
+    pygame.display.set_caption("Z-буфер: Демонстрация работы алгоритма")
+    
     clock = pygame.time.Clock()
-    
-    # Загрузка модели
-    try:
-        model = load_obj("models/cube.obj")
-    except FileNotFoundError:
-        print("Model files not found. Creating default cube...")
-        model = load_obj("default_cube")
-    
-    # Создание камеры
-    camera = Camera(
-        position=Point(0, 0, 10),
-        target=Point(0, 0, 0),
-        up=Point(0, 1, 0),
-        aspect_ratio=WIDTH/HEIGHT
-    )
     
     # Создание рендерера
     renderer = Renderer(WIDTH, HEIGHT)
     
-    # Параметры вращения
-    angle_x = 0
-    angle_y = 0
-    rotation_speed = 1.0  # Увеличил скорость вращения для тестирования
+    # Создание камеры
+    camera = Camera(
+        position=Point(0, 0, 0),
+        target=Point(0, 0, -1),
+        up=Point(0, 1, 0),
+        aspect_ratio=WIDTH/HEIGHT
+    )
     
-    # Настройки отображения
+    # Создание сцены с тремя объектами
+    scene_objects = create_scene_with_three_objects()
+    
+    # Параметры отображения
     show_wireframe = True
-    show_filled = True
+    show_filled = True  # Включаем заливку по умолчанию
     backface_culling = True
-    show_normals = False
     
-    # Отладочная информация
-    debug_mode = False
+    # Переменные для FPS
+    fps = 60
+    last_time = pygame.time.get_ticks()
+    frame_count = 0
     
     # Основной цикл
     running = True
     while running:
+        # Расчет FPS
+        current_time = pygame.time.get_ticks()
+        frame_count += 1
+        if current_time - last_time > 1000:
+            fps = frame_count
+            frame_count = 0
+            last_time = current_time
+        
+        # Обработка событий
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_w:
+                # Выход
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                
+                # Управление отображением
+                elif event.key == pygame.K_w:
                     show_wireframe = not show_wireframe
+                    print(f"Каркас: {'ВКЛ' if show_wireframe else 'ВЫКЛ'}")
+                
                 elif event.key == pygame.K_f:
                     show_filled = not show_filled
+                    print(f"Заливка (Z-буфер): {'ВКЛ' if show_filled else 'ВЫКЛ'}")
+                
                 elif event.key == pygame.K_c:
                     backface_culling = not backface_culling
-                    print(f"Back-face culling: {'ON' if backface_culling else 'OFF'}")
-                elif event.key == pygame.K_n:
-                    show_normals = not show_normals
-                    print(f"Normals visualization: {'ON' if show_normals else 'OFF'}")
-                elif event.key == pygame.K_1:
-                    try:
-                        model = load_obj("models/cube.obj")
-                        print("Loaded cube")
-                    except:
-                        print("cube.obj not found, creating default cube")
-                        model = load_obj("default_cube")
-                elif event.key == pygame.K_2:
-                    try:
-                        model = load_obj("models/sphere.obj")
-                        print("Loaded sphere")
-                    except:
-                        print("sphere.obj not found, loading cube instead")
-                        model = load_obj("default_cube")
-                elif event.key == pygame.K_UP:
-                    camera.position.y += 0.5
-                    camera.target.y += 0.5
-                elif event.key == pygame.K_DOWN:
-                    camera.position.y -= 0.5
-                    camera.target.y -= 0.5
-                elif event.key == pygame.K_LEFT:
-                    camera.position.x -= 0.5
-                    camera.target.x -= 0.5
-                elif event.key == pygame.K_RIGHT:
-                    camera.position.x += 0.5
-                    camera.target.x += 0.5
+                    print(f"Отсечение граней: {'ВКЛ' if backface_culling else 'ВЫКЛ'}")
+                
+                # Переключение проекций
+                elif event.key == pygame.K_o:
+                    camera.set_projection_type('orthographic')
+                    print("Проекция: ОРТОГРАФИЧЕСКАЯ (параллельная)")
+                
+                elif event.key == pygame.K_i:
+                    camera.set_projection_type('perspective')
+                    print("Проекция: ПЕРСПЕКТИВНАЯ")
+                
+                # Сброс
                 elif event.key == pygame.K_r:
-                    angle_x = angle_y = 0
-                    camera.position = Point(0, 0, 10)
-                    camera.target = Point(0, 0, 0)
-                    print("Reset rotation and camera")
-                elif event.key == pygame.K_s:
-                    shear_matrix = shearing_matrix(0.2, 0.1, 0, 0, 0, 0)
-                    model.apply_transform(shear_matrix)
-                    print("Applied shearing transformation")
-                elif event.key == pygame.K_v:
-                    debug_mode = not debug_mode
-                    print(f"Debug mode: {'ON' if debug_mode else 'OFF'}")
-                elif event.key == pygame.K_SPACE:
-                    # Вывод информации о нормалях
-                    print("\n=== Face Normals ===")
-                    for i, face in enumerate(model.faces[:6]):  # Первые 6 граней
-                        if face.normal:
-                            print(f"Face {i}: normal = ({face.normal.x:.2f}, {face.normal.y:.2f}, {face.normal.z:.2f})")
+                    scene_objects = create_scene_with_three_objects()
+                    print("Сцена сброшена")
+                
+                # Тест перекрытия
+                elif event.key == pygame.K_t:
+                    # Располагаем объекты так, чтобы они перекрывались
+                    scene_objects[0].position = Point(-1.5, 0, 0)   # Куб слева
+                    scene_objects[1].position = Point(1.5, 0, 2)    # Ромб справа (дальше)
+                    scene_objects[2].position = Point(0, 0, 4)      # Пирамида в центре (самая дальняя)
+                    print("\n=== ТЕСТ ПЕРЕКРЫТИЯ ОБЪЕКТОВ ===")
+                    print("Объекты расположены на разной глубине:")
+                    print("• Куб: Z = 0 (ближе всех)")
+                    print("• Ромб: Z = 2 (дальше)")
+                    print("• Пирамида: Z = 4 (самая дальняя)")
+                    print("\nВключите заливку (F) для наблюдения работы Z-буфера")
+                    print("Вращайте объекты, чтобы увидеть перекрытие со всех сторон")
         
-        # Обработка непрерывных клавиш
+        # Обработка непрерывных клавиш для вращения
         keys = pygame.key.get_pressed()
+        rotation_speed = 2.0
         
-        # Вращение объекта
-        if keys[pygame.K_a]:
-            angle_y -= rotation_speed
-        if keys[pygame.K_d]:
-            angle_y += rotation_speed
-        if keys[pygame.K_z]:
-            angle_x -= rotation_speed
-        if keys[pygame.K_x]:
-            angle_x += rotation_speed
-        
-        # Приближение/отдаление (Q/E)
+        # Куб - Q/E (вращение по оси Y)
         if keys[pygame.K_q]:
-            direction = Point(
-                camera.target.x - camera.position.x,
-                camera.target.y - camera.position.y,
-                camera.target.z - camera.position.z
-            )
-            length = np.sqrt(direction.x**2 + direction.y**2 + direction.z**2)
-            if length > 0:
-                move_distance = 0.5
-                camera.position.x += (direction.x / length) * move_distance
-                camera.position.y += (direction.y / length) * move_distance
-                camera.position.z += (direction.z / length) * move_distance
-        
+            scene_objects[0].rotation.y -= rotation_speed
         if keys[pygame.K_e]:
-            direction = Point(
-                camera.target.x - camera.position.x,
-                camera.target.y - camera.position.y,
-                camera.target.z - camera.position.z
-            )
-            length = np.sqrt(direction.x**2 + direction.y**2 + direction.z**2)
-            if length > 0:
-                move_distance = 0.5
-                camera.position.x -= (direction.x / length) * move_distance
-                camera.position.y -= (direction.y / length) * move_distance
-                camera.position.z -= (direction.z / length) * move_distance
+            scene_objects[0].rotation.y += rotation_speed
         
-        # Создание матрицы вращения
-        rot_x = rotation_x_matrix(angle_x)
-        rot_y = rotation_y_matrix(angle_y)
-        rotation = composite_transformation(rot_y, rot_x)
+        # Ромб - A/D (вращение по оси X)
+        if keys[pygame.K_a]:
+            scene_objects[1].rotation.x -= rotation_speed
+        if keys[pygame.K_d]:
+            scene_objects[1].rotation.x += rotation_speed
         
-        # Применение преобразований к модели
-        model_transformed = model.copy()
-        model_transformed.apply_transform(rotation)
+        # Пирамида - Z/X (вращение по оси Z)
+        if keys[pygame.K_z]:
+            scene_objects[2].rotation.z -= rotation_speed
+        if keys[pygame.K_x]:
+            scene_objects[2].rotation.z += rotation_speed
+        
+        # Автоматическое вращение если нет ручного управления
+        if not any(keys[k] for k in [pygame.K_q, pygame.K_e, pygame.K_a, pygame.K_d, pygame.K_z, pygame.K_x]):
+            scene_objects[0].rotation.y += 0.5  # Куб вращается по Y
+            scene_objects[1].rotation.x += 0.3  # Ромб вращается по X
+            scene_objects[2].rotation.y += 0.4  # Пирамида вращается по Y
         
         # Очистка экрана
         screen.fill((30, 30, 40))
         
-        # Рендеринг модели
+        # Получаем преобразованные модели
+        transformed_models = [obj.get_transformed_model() for obj in scene_objects]
+        
+        # Рендеринг всех объектов
         renderer.render(
             screen=screen,
-            model=model_transformed,
+            models=transformed_models,
             camera=camera,
             show_wireframe=show_wireframe,
             show_filled=show_filled,
-            backface_culling=backface_culling,
-            show_normals=show_normals
+            backface_culling=backface_culling
         )
         
         # Отображение информации
-        font = pygame.font.Font(None, 24)
-        info = [
-            f"W: Wireframe ({'ON' if show_wireframe else 'OFF'})",
-            f"F: Filled ({'ON' if show_filled else 'OFF'})",
-            f"C: Back-face culling ({'ON' if backface_culling else 'OFF'})",
-            f"N: Show normals ({'ON' if show_normals else 'OFF'})",
-            f"1/2: Load cube/sphere",
-            f"Arrows: Move camera",
-            f"A/D/Z/X: Rotate object (HOLD)",
-            f"R: Reset",
-            f"Projection: ORTHOGRAPHIC",
-        ]
-        
-        for i, text in enumerate(info):
-            text_surface = font.render(text, True, (200, 200, 200))
-            screen.blit(text_surface, (10, 10 + i * 25))
-        
-        # Отображение углов вращения
-        rotation_info = f"Rotation X: {angle_x:.1f}°, Y: {angle_y:.1f}°"
-        rotation_surface = font.render(rotation_info, True, (255, 255, 100))
-        screen.blit(rotation_surface, (WIDTH - 250, 10))
-        
-        # Отображение направления камеры
-        direction = Point(
-            camera.target.x - camera.position.x,
-            camera.target.y - camera.position.y,
-            camera.target.z - camera.position.z
-        )
-        length = np.sqrt(direction.x**2 + direction.y**2 + direction.z**2)
-        if length > 0:
-            direction.x /= length
-            direction.y /= length
-            direction.z /= length
-            
-            cam_dir_info = f"View dir: ({direction.x:.2f}, {direction.y:.2f}, {direction.z:.2f})"
-            cam_dir_surface = font.render(cam_dir_info, True, (100, 255, 255))
-            screen.blit(cam_dir_surface, (WIDTH - 250, 35))
+        display_info(screen, show_wireframe, show_filled, backface_culling,
+                    camera.projection_type, WIDTH, HEIGHT, fps)
         
         # Обновление экрана
         pygame.display.flip()
+        
+        # Ограничение FPS
         clock.tick(60)
-    
+
+    # Завершение
     pygame.quit()
     sys.exit()
 
