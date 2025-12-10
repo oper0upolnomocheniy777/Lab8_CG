@@ -1,4 +1,3 @@
-# main.py
 import numpy as np
 import pygame
 import sys
@@ -34,11 +33,14 @@ class SceneObject:
 def create_scene_with_three_objects():
     """Создание сцены с тремя объектами"""
     print("\n" + "="*50)
-    print("СЦЕНА С ТРЕМЯ ОБЪЕКТАМИ")
+    print("СЦЕНА С ТРЕМЯ ОБЪЕКТАМИ И УПРАВЛЯЕМОЙ КАМЕРОЙ")  # Изменено
     print("="*50)
     print("1. Куб (выпуклый) - красный")
     print("2. Ромб/октаэдр (выпуклый) - зеленый")
     print("3. Пирамида (невыпуклая) - синяя")
+    print("\n=== УПРАВЛЕНИЕ КАМЕРОЙ ===")  # Добавлено
+    print("K: Включить/выключить вращение камеры вокруг сцены")  # Добавлено
+    print("P: Включить/выключить автоматическое вращение объектов")  # Добавлено
     print("="*50 + "\n")
     
     # Три объекта с разным положением и вращением
@@ -51,7 +53,7 @@ def create_scene_with_three_objects():
     return objects
 
 def display_info(screen, show_wireframe, show_filled, backface_culling, 
-                 projection_type, width, height, fps):
+                 projection_type, width, height, fps, camera_rotating, objects_rotating):  # Измененная сигнатура
     """Отображение информации на экране"""
     font = pygame.font.Font(None, 28)
     small_font = pygame.font.Font(None, 22)
@@ -66,6 +68,12 @@ def display_info(screen, show_wireframe, show_filled, backface_culling,
         "I: Перспективная проекция",
         "T: Тест перекрытия объектов",
         "R: Сброс сцены",
+        "",
+        "=== ВРАЩЕНИЕ ===",  # Добавлено
+        "K: Вращение камеры вкл/выкл",  # Добавлено
+        "P: Вращение объектов вкл/выкл",  # Добавлено
+        f"  Камера: {'ВКЛ' if camera_rotating else 'ВЫКЛ'}",  # Добавлено
+        f"  Объекты: {'ВКЛ' if objects_rotating else 'ВЫКЛ'}",  # Добавлено
         "",
         "=== ВРАЩЕНИЕ ОБЪЕКТОВ ===",
         "Куб (красный):",
@@ -166,28 +174,35 @@ def main():
     # Настройки окна
     WIDTH, HEIGHT = 1200, 800
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Z-буфер: Демонстрация работы алгоритма")
+    pygame.display.set_caption("Z-буфер: Камера и вращение объектов")  # Изменено
     
     clock = pygame.time.Clock()
     
     # Создание рендерера
     renderer = Renderer(WIDTH, HEIGHT)
     
-    # Создание камеры
+    # Создание камеры - устанавливаем начальную позицию
     camera = Camera(
-        position=Point(0, 0, 0),
-        target=Point(0, 0, -1),
+        position=Point(0, 8, 15),  # Изменено: сверху и сзади от сцены
+        target=Point(0, 0, 0),     # Смотрим на центр
         up=Point(0, 1, 0),
         aspect_ratio=WIDTH/HEIGHT
     )
+    
+    # Устанавливаем перспективную проекцию по умолчанию
+    camera.set_projection_type('perspective')  # Добавлено
     
     # Создание сцены с тремя объектами
     scene_objects = create_scene_with_three_objects()
     
     # Параметры отображения
     show_wireframe = True
-    show_filled = True  # Включаем заливку по умолчанию
+    show_filled = True
     backface_culling = True
+    
+    # Флаги вращения - добавлено
+    camera_rotating = False
+    objects_rotating = True  # По умолчанию объекты вращаются
     
     # Переменные для FPS
     fps = 60
@@ -204,6 +219,10 @@ def main():
             fps = frame_count
             frame_count = 0
             last_time = current_time
+        
+        # Обновление камеры - добавлено
+        if camera_rotating:
+            camera.update()
         
         # Обработка событий
         for event in pygame.event.get():
@@ -245,21 +264,30 @@ def main():
                 # Тест перекрытия
                 elif event.key == pygame.K_t:
                     # Располагаем объекты так, чтобы они перекрывались
-                    scene_objects[0].position = Point(-1.5, 0, 0)   # Куб слева
-                    scene_objects[1].position = Point(1.5, 0, 2)    # Ромб справа (дальше)
-                    scene_objects[2].position = Point(0, 0, 4)      # Пирамида в центре (самая дальняя)
+                    scene_objects[0].position = Point(-1.5, 0, 0)
+                    scene_objects[1].position = Point(1.5, 0, 2)
+                    scene_objects[2].position = Point(0, 0, 4)
                     print("\n=== ТЕСТ ПЕРЕКРЫТИЯ ОБЪЕКТОВ ===")
-                    print("Объекты расположены на разной глубине:")
-                    print("• Куб: Z = 0 (ближе всех)")
-                    print("• Ромб: Z = 2 (дальше)")
-                    print("• Пирамида: Z = 4 (самая дальняя)")
-                    print("\nВключите заливку (F) для наблюдения работы Z-буфера")
-                    print("Вращайте объекты, чтобы увидеть перекрытие со всех сторон")
+                
+                # Управление вращением камеры (K) - добавлено
+                elif event.key == pygame.K_k:
+                    camera_rotating = not camera_rotating
+                    if camera_rotating:
+                        camera.start_rotation()
+                    else:
+                        camera.stop_rotation()
+                    print(f"Вращение камеры: {'ВКЛ' if camera_rotating else 'ВЫКЛ'}")
+                
+                # Управление вращением объектов (P) - добавлено
+                elif event.key == pygame.K_p:
+                    objects_rotating = not objects_rotating
+                    print(f"Вращение объектов: {'ВКЛ' if objects_rotating else 'ВЫКЛ'}")
         
-        # Обработка непрерывных клавиш для вращения
+        # Обработка непрерывных клавиш для вращения объектов
         keys = pygame.key.get_pressed()
         rotation_speed = 2.0
         
+        # Ручное вращение объектов
         # Куб - Q/E (вращение по оси Y)
         if keys[pygame.K_q]:
             scene_objects[0].rotation.y -= rotation_speed
@@ -278,8 +306,8 @@ def main():
         if keys[pygame.K_x]:
             scene_objects[2].rotation.z += rotation_speed
         
-        # Автоматическое вращение если нет ручного управления
-        if not any(keys[k] for k in [pygame.K_q, pygame.K_e, pygame.K_a, pygame.K_d, pygame.K_z, pygame.K_x]):
+        # Автоматическое вращение объектов если включено - изменено
+        if objects_rotating and not any(keys[k] for k in [pygame.K_q, pygame.K_e, pygame.K_a, pygame.K_d, pygame.K_z, pygame.K_x]):
             scene_objects[0].rotation.y += 0.5  # Куб вращается по Y
             scene_objects[1].rotation.x += 0.3  # Ромб вращается по X
             scene_objects[2].rotation.y += 0.4  # Пирамида вращается по Y
@@ -300,9 +328,10 @@ def main():
             backface_culling=backface_culling
         )
         
-        # Отображение информации
+        # Отображение информации (передаем новые параметры) - изменено
         display_info(screen, show_wireframe, show_filled, backface_culling,
-                    camera.projection_type, WIDTH, HEIGHT, fps)
+                    camera.projection_type, WIDTH, HEIGHT, fps, 
+                    camera_rotating, objects_rotating)
         
         # Обновление экрана
         pygame.display.flip()
